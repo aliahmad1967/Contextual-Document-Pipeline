@@ -1,0 +1,5 @@
+{
+  "name": "Contextual Document Pipeline",
+  "description": "A Gemini-powered document processing pipeline that parses, chunks, and enriches text with AI context, visualizing the transformation from raw data to intelligent insights.",
+  "requestFramePermissions": []
+}
