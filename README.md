@@ -98,6 +98,34 @@ To use the application offline with Ollama:
    - Click nodes to see connections, use the search bar to find specific entities, and zoom/pan to explore the network.
 6. **Export**: Use the export buttons to download your data for external use.
 
+## 🚀 Professional Workflow Example: Legal Contract Analysis
+
+Here is an example of how a professional analyst might use this tool to dissect a **Service Level Agreement (SLA)** or **Research Paper**:
+
+### 1. Configuration Strategy
+*   **Privacy First**: For sensitive contracts, switch to **Local Ollama** mode (Settings > Local Ollama).
+*   **Model Selection**: Use a high-context model like `llama3` or `mistral` to ensure subtle clauses are captured.
+
+### 2. The Process
+1.  **Ingestion**: Paste the raw text of the SLA into the "Raw Text" panel.
+2.  **Pipeline Execution**: Click "Process Text". The system normalizes whitespace and chunks the document into semantic sections.
+3.  **Semantic Review**:
+    *   Scroll through **Contextual Chunks**.
+    *   Look for chunks with **Negative Sentiment** (red tags) – these often indicate penalties, termination clauses, or liabilities.
+    *   Use the **Summarize Chunk** button on complex legal paragraphs to get a bulleted simplification.
+
+### 3. Knowledge Network Analysis
+1.  Click **Generate Graph** then **Visualize**.
+2.  **Cluster by Type**: Open Settings (Sliders icon) and enable "Cluster by Type". This visually separates *Organizations* (Parties involved) from *Locations* (Jurisdictions) and *Concepts* (Obligations).
+3.  **Deep Dive**:
+    *   Click on the node representing "Service Provider".
+    *   Select **Isolate Subgraph** in the sidebar.
+    *   Now you verify exactly what other entities (Deliverables, Penalties, Dates) are directly linked to the provider, filtering out the noise of the rest of the document.
+
+### 4. Insight Export
+*   Export the **Knowledge Graph JSON** to import into advanced visualization tools like Gephi.
+*   Export the **Processed Chunks** to archive the enriched metadata alongside the original contract.
+
 ## License
 
 MIT
