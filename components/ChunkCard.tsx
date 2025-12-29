@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { Chunk } from '../types';
-import { Hash, Tag, Info, Users, Building, MapPin, FileText, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Hash, Tag, Info, Users, Building, MapPin, FileText, Loader2, ChevronDown, ChevronUp, Sparkles, MoreVertical } from 'lucide-react';
 
 interface Props {
   chunk: Chunk;
   index: number;
-  onSummarize?: (id: string) => void;
+  onSummarize?: (id: string, style?: 'bullet' | 'executive' | 'technical') => void;
 }
 
 const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   
   const TRUNCATE_LIMIT = 200;
 
@@ -22,10 +23,11 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
     return 'bg-slate-700 text-slate-300 border-slate-600';
   };
 
-  const handleSummarizeClick = async () => {
+  const handleSummarizeClick = async (style: 'bullet' | 'executive' | 'technical' = 'bullet') => {
     if (!onSummarize) return;
     setLoadingSummary(true);
-    await onSummarize(chunk.id);
+    setShowOptions(false);
+    await onSummarize(chunk.id, style);
     setLoadingSummary(false);
   };
 
@@ -34,8 +36,10 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
     ? chunk.originalText.slice(0, TRUNCATE_LIMIT).trim() + '...' 
     : chunk.originalText;
 
+  const hasEnrichment = chunk.enrichedContext !== undefined;
+
   return (
-    <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 hover:border-brand-accent/30 transition-all group flex flex-col h-full">
+    <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4 hover:border-brand-accent/30 transition-all group flex flex-col h-full relative">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
@@ -43,7 +47,7 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
                 CHUNK_ID: {chunk.id.slice(0, 8)}
             </span>
             <span className={`text-[10px] px-2 py-0.5 rounded-full border uppercase font-bold tracking-wider ${getSentimentColor(chunk.sentiment)}`}>
-                {chunk.sentiment || 'Analyzing...'}
+                {chunk.sentiment || (hasEnrichment ? 'Neutral' : 'Analyzing...')}
             </span>
         </div>
         <div className="text-slate-600 text-xs">#{index + 1}</div>
@@ -69,7 +73,7 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
       </div>
 
       {/* Enrichment Data */}
-      {chunk.enrichedContext ? (
+      {hasEnrichment ? (
           <div className="bg-brand-dark rounded p-3 space-y-3 animate-in fade-in duration-500 mt-auto">
             <div className="flex gap-2 items-start">
                 <Info size={14} className="mt-0.5 text-brand-accent shrink-0" />
@@ -112,25 +116,45 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
 
             {/* Summary Section */}
             {chunk.summary ? (
-                <div className="pt-2 border-t border-slate-800 animate-in fade-in">
-                    <div className="flex items-start gap-2">
-                        <FileText size={12} className="mt-0.5 text-blue-400 shrink-0" />
-                        <div className="w-full">
-                             <span className="text-[10px] text-blue-400 font-bold uppercase block mb-1">Generated Summary</span>
-                             <p dir="auto" className="text-xs text-slate-300">{chunk.summary}</p>
+                <div className="pt-2 border-t border-slate-800 animate-in slide-in-from-top-2">
+                    <div className="bg-blue-600/10 p-2 rounded border border-blue-500/20">
+                        <div className="flex items-center justify-between mb-1">
+                             <span className="text-[10px] text-blue-400 font-bold uppercase flex items-center gap-1">
+                                <Sparkles size={10} /> AI Summary
+                             </span>
+                             <button onClick={() => handleSummarizeClick()} className="text-[10px] text-slate-500 hover:text-white">Regenerate</button>
                         </div>
+                        <p dir="auto" className="text-xs text-slate-300 leading-relaxed">{chunk.summary}</p>
                     </div>
                 </div>
             ) : (
-                <div className="pt-2 border-t border-slate-800">
-                    <button 
-                        onClick={handleSummarizeClick}
-                        disabled={loadingSummary}
-                        className="w-full text-xs flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 py-2 rounded text-slate-400 hover:text-white transition-colors border border-transparent hover:border-slate-600 disabled:opacity-50"
-                    >
-                        {loadingSummary ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
-                        {loadingSummary ? "Summarizing..." : "Summarize Chunk"}
-                    </button>
+                <div className="pt-2 border-t border-slate-800 relative">
+                    <div className="flex gap-1">
+                        <button 
+                            onClick={() => handleSummarizeClick('bullet')}
+                            disabled={loadingSummary}
+                            className="flex-1 text-[10px] flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 py-2 rounded text-slate-300 transition-colors border border-transparent disabled:opacity-50"
+                        >
+                            {loadingSummary ? <Loader2 size={10} className="animate-spin" /> : <FileText size={10} />}
+                            Summarize
+                        </button>
+                        <button 
+                            onClick={() => setShowOptions(!showOptions)}
+                            className="bg-slate-800 hover:bg-slate-700 px-2 rounded text-slate-400 transition-colors border border-transparent"
+                        >
+                            <ChevronDown size={14} />
+                        </button>
+                    </div>
+
+                    {showOptions && (
+                        <div className="absolute bottom-full left-0 right-0 mb-2 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden animate-in fade-in slide-in-from-bottom-2">
+                            <div className="p-1">
+                                <button onClick={() => handleSummarizeClick('bullet')} className="w-full text-left px-3 py-2 text-[10px] text-slate-300 hover:bg-slate-700 rounded transition-colors">Bullet Points</button>
+                                <button onClick={() => handleSummarizeClick('executive')} className="w-full text-left px-3 py-2 text-[10px] text-slate-300 hover:bg-slate-700 rounded transition-colors">Executive Paragraph</button>
+                                <button onClick={() => handleSummarizeClick('technical')} className="w-full text-left px-3 py-2 text-[10px] text-slate-300 hover:bg-slate-700 rounded transition-colors">Technical TL;DR</button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -138,16 +162,12 @@ const ChunkCard: React.FC<Props> = ({ chunk, index, onSummarize }) => {
       ) : (
           <div className="h-20 flex items-center justify-center bg-slate-900/50 rounded border border-dashed border-slate-800 mt-auto">
              <span className="text-xs text-slate-600 flex items-center gap-2">
-                 <SparklesIcon className="w-3 h-3 animate-spin" /> Waiting for enrichment...
+                 <Loader2 className="w-3 h-3 animate-spin" /> Waiting for enrichment...
              </span>
           </div>
       )}
     </div>
   );
 };
-
-const SparklesIcon = ({ className }: { className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M9 5H5"/><path d="M3 7V3"/><path d="M7 5v4"/></svg>
-)
 
 export default ChunkCard;

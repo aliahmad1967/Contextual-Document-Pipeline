@@ -4,8 +4,10 @@ const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
 };
 
-// Helper to strip Markdown code blocks if the model includes them despite format: json
+// More robust JSON cleaning to handle model chatter
 const cleanJson = (text: string): string => {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) return jsonMatch[0];
   return text.replace(/```json/g, '').replace(/```/g, '').trim();
 };
 
@@ -36,87 +38,53 @@ async function callOllama(url: string, model: string, prompt: string, images: st
 }
 
 export const ollamaParse = async (input: string, type: 'text' | 'image', url: string, model: string): Promise<string> => {
-   let prompt = `Clean and normalize the following text. Remove excessive whitespace. Return only the clean text. \n\nTEXT:\n${input}`;
+   let prompt = `Clean and normalize the following text. Return only the clean text.\n\nTEXT:\n${input}`;
    let images: string[] = [];
-
    if (type === 'image') {
       const base64Data = input.split(',')[1];
       images = [base64Data];
-      prompt = "Extract all text from this image. Return ONLY the text. Do not describe the image, just output the text found inside it.";
+      prompt = "Extract all text from this image. Return ONLY the text.";
    }
-
    return callOllama(url, model, prompt, images);
 };
 
 export const ollamaEnrich = async (chunkText: string, fullDocSummary: string, url: string, model: string) => {
-    const prompt = `
-      You are a contextual enrichment engine.
-      DOCUMENT SUMMARY: ${fullDocSummary}
-      CURRENT CHUNK: "${chunkText}"
-
-      Analyze the chunk. Return a JSON object with these fields:
-      - context: (string) Brief 1-sentence context.
-      - keywords: (array of strings) Up to 3 keywords.
-      - sentiment: (string) Neutral, Positive, Negative, or Informational.
-      - entities: (object) with fields "people", "organizations", "locations" (all arrays of strings).
-
-      Ensure valid JSON output.
-    `;
-    
+    const prompt = `Return valid JSON describing this chunk's context, keywords (3), sentiment, and entities (people, organizations, locations). Summary: ${fullDocSummary}. Chunk: "${chunkText}"`;
     const response = await callOllama(url, model, prompt, [], true);
     try {
         return JSON.parse(cleanJson(response));
     } catch(e) {
         console.error("JSON Parse Error (Enrich)", e, response);
-        return { 
-            context: "Analysis failed", 
-            keywords: [], 
-            sentiment: "Neutral", 
-            entities: { people: [], organizations: [], locations: [] } 
-        };
+        return { context: "Analysis failed", keywords: [], sentiment: "Neutral", entities: { people: [], organizations: [], locations: [] } };
     }
 };
 
-export const ollamaGenerateChunkSummary = async (chunkText: string, url: string, model: string): Promise<string> => {
-    const prompt = `Summarize the following text segment concisely in one or two bullet points:\n\n"${chunkText}"`;
+export const ollamaGenerateChunkSummary = async (chunkText: string, url: string, model: string, style: 'bullet' | 'executive' | 'technical' = 'bullet'): Promise<string> => {
+    const stylePrompt = {
+        bullet: "a single bullet point",
+        executive: "a professional paragraph",
+        technical: "a data-heavy TL;DR"
+    };
+    const prompt = `Summarize this text concisely as ${stylePrompt[style]}:\n\n"${chunkText}"`;
     return callOllama(url, model, prompt);
 };
 
 export const ollamaGenerateDocumentSummary = async (text: string, url: string, model: string): Promise<string> => {
-    // Truncate to avoid context window issues with smaller local models
     const truncated = text.slice(0, 4000); 
-    const prompt = `Summarize the following document in 2 sentences to provide high-level context:\n\n${truncated}`;
+    const prompt = `Summarize in 2 sentences:\n\n${truncated}`;
     return callOllama(url, model, prompt);
 };
 
 export const ollamaGenerateKnowledgeGraph = async (chunks: Chunk[], url: string, model: string): Promise<KnowledgeGraph> => {
-  const contextData = chunks.slice(0, 15).map(c => `
-    Text: "${c.originalText.slice(0, 150)}..."
-    Entities Found: ${JSON.stringify(c.entities)}
-  `).join('\n---\n');
-
-  const prompt = `
-    You are a Knowledge Graph generator.
-    Analyze the provided text chunks and their extracted entities.
-    
-    Task:
-    1. Identify unique entities (nodes) representing People, Organizations, Locations, or Concepts. Merge duplicates.
-    2. Identify relationships (edges) between these entities.
-    
-    Return a JSON object with "nodes" (id, label, type) and "edges" (source, target, relation).
-    Nodes 'id' should be snake_case.
-    
-    INPUT DATA:
-    ${contextData}
-  `;
-
-  const response = await callOllama(url, model, prompt, [], true);
+  const contextData = chunks.slice(0, 15).map(c => `Text: "${c.originalText.slice(0, 150)}..." Entities: ${JSON.stringify(c.entities)}`).join('\n---\n');
+  const prompt = `Identify nodes (id, label, type) and edges (source, target, relation) from this data. 
   
+  IMPORTANT: All node 'label' fields and edge 'relation' fields MUST remain in the same language as the source text. Do not translate them to English. 
+  
+  Return JSON only. \n\nDATA:\n${contextData}`;
+  const response = await callOllama(url, model, prompt, [], true);
   try {
-    const json = JSON.parse(cleanJson(response));
-    // Basic validation
-    if (!json.nodes || !json.edges) throw new Error("Invalid graph structure");
-    return json;
+    return JSON.parse(cleanJson(response));
   } catch (e) {
     console.error("JSON Parse Error (Graph)", e, response);
     return { nodes: [], edges: [] };

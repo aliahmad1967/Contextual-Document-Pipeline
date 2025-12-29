@@ -16,11 +16,11 @@ export const enrichChunk = async (chunkText: string, fullDocSummary: string, con
   return gemini.enrichChunk(chunkText, fullDocSummary);
 };
 
-export const generateChunkSummary = async (chunkText: string, config: AIConfig): Promise<string> => {
+export const generateChunkSummary = async (chunkText: string, config: AIConfig, style: 'bullet' | 'executive' | 'technical' = 'bullet'): Promise<string> => {
   if (config.provider === 'ollama') {
-    return ollama.ollamaGenerateChunkSummary(chunkText, config.ollamaUrl, config.ollamaModel);
+    return ollama.ollamaGenerateChunkSummary(chunkText, config.ollamaUrl, config.ollamaModel, style);
   }
-  return gemini.generateChunkSummary(chunkText);
+  return gemini.generateChunkSummary(chunkText, style);
 };
 
 export const generateDocumentSummary = async (text: string, config: AIConfig): Promise<string> => {

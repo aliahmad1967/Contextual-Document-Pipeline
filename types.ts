@@ -46,9 +46,11 @@ export interface PipelineStats {
   processingTimeMs: number;
 }
 
+export type InputType = 'text' | 'image' | 'pdf' | 'epub';
+
 export interface DocumentState {
-  rawInput: string | null; // Text or base64 image
-  inputType: 'text' | 'image';
+  rawInput: string | null; // Text, base64 image, or binary-ish data
+  inputType: InputType;
   parsedText: string;
   chunks: Chunk[];
   stats: PipelineStats;

@@ -1,8 +1,9 @@
 import React, { useRef } from 'react';
-import { Upload, Image as ImageIcon, Type } from 'lucide-react';
+import { Upload, Image as ImageIcon, Type, FileText, BookOpen } from 'lucide-react';
+import { InputType } from '../types';
 
 interface Props {
-  onInput: (data: string, type: 'text' | 'image') => void;
+  onInput: (data: string | File, type: InputType) => void;
   disabled: boolean;
 }
 
@@ -14,28 +15,25 @@ const InputSection: React.FC<Props> = ({ onInput, disabled }) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      // Simple mime check
-      if (file.type.startsWith('image/')) {
-        onInput(result, 'image');
-      } else {
-        // Assume text
-        // Note: For a real app we'd decode base64 for text, but FileReader.readAsText is better
-        // Re-reading as text if it's not an image for simplicity
-        const textReader = new FileReader();
-        textReader.onload = (ev) => {
-             onInput(ev.target?.result as string, 'text');
-        }
-        textReader.readAsText(file);
-      }
-    };
+    const extension = file.name.split('.').pop()?.toLowerCase();
 
     if (file.type.startsWith('image/')) {
-        reader.readAsDataURL(file);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        onInput(event.target?.result as string, 'image');
+      };
+      reader.readAsDataURL(file);
+    } else if (extension === 'pdf') {
+      onInput(file, 'pdf');
+    } else if (extension === 'epub') {
+      onInput(file, 'epub');
     } else {
-        reader.readAsText(file);
+      // Default to text parsing
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        onInput(event.target?.result as string, 'text');
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -58,7 +56,7 @@ const InputSection: React.FC<Props> = ({ onInput, disabled }) => {
             disabled={disabled}
             dir="auto"
             placeholder="Paste your document text here..." 
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-300 resize-none focus:outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue disabled:opacity-50"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-300 resize-none focus:outline-none focus:border-brand-blue focus:ring-1 focus:ring-brand-blue disabled:opacity-50 min-h-[160px]"
         />
         <button 
             onClick={handleTextSubmit}
@@ -73,22 +71,26 @@ const InputSection: React.FC<Props> = ({ onInput, disabled }) => {
       <div className="bg-brand-panel p-6 rounded-xl border border-slate-700 flex flex-col">
          <div className="flex items-center gap-2 mb-4 text-purple-400">
             <ImageIcon size={20} />
-            <h3 className="font-semibold text-white">Image / Document</h3>
+            <h3 className="font-semibold text-white">Advanced Formats</h3>
         </div>
         <div 
             onClick={() => !disabled && fileInputRef.current?.click()}
-            className={`flex-1 border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-400/5 transition-all group ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`flex-1 border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-400/5 transition-all group ${disabled ? 'opacity-50 cursor-not-allowed' : ''} min-h-[160px] p-4 text-center`}
         >
-            <Upload className="w-10 h-10 text-slate-600 group-hover:text-purple-400 mb-3 transition-colors" />
-            <p className="text-sm text-slate-400 group-hover:text-purple-300">Click to upload Image or Text File</p>
-            <p className="text-xs text-slate-600 mt-2">Supports PNG, JPG, TXT, MD</p>
+            <div className="flex gap-4 mb-3">
+              <ImageIcon className="w-8 h-8 text-slate-600 group-hover:text-purple-400 transition-colors" />
+              <FileText className="w-8 h-8 text-slate-600 group-hover:text-blue-400 transition-colors" />
+              <BookOpen className="w-8 h-8 text-slate-600 group-hover:text-emerald-400 transition-colors" />
+            </div>
+            <p className="text-sm text-slate-400 group-hover:text-white transition-colors">Click to upload Document</p>
+            <p className="text-xs text-slate-600 mt-2">Supports PDF, EPUB, Images (OCR), TXT, MD</p>
         </div>
         <input 
             type="file" 
             ref={fileInputRef}
             onChange={handleFileUpload}
             className="hidden"
-            accept="image/*,.txt,.md,.json"
+            accept="image/*,.txt,.md,.json,.pdf,.epub"
             disabled={disabled}
         />
       </div>

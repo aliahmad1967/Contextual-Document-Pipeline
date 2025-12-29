@@ -1,71 +1,61 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Chunk, KnowledgeGraph } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Maximum character limit for a single request to prevent token overflow
+const MAX_TEXT_INPUT_CHARS = 800000;
+
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // 1. PARSE: Clean text or OCR image
-export const parseDocument = async (input: string, type: 'text' | 'image'): Promise<string> => {
-  const model = 'gemini-3-flash-preview'; // Flash is fast for OCR/Parsing
+export const parseDocument = async (input: string, type: string): Promise<string> => {
+  const ai = getAI();
+  const model = 'gemini-3-flash-preview'; 
   
   let contents;
-  
   if (type === 'image') {
-    // Input is expected to be base64 data URL
     const base64Data = input.split(',')[1];
     const mimeType = input.split(';')[0].split(':')[1];
-    
     contents = {
       parts: [
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Data
-          }
-        },
-        {
-          text: "Perform OCR on this image. Extract all readable text efficiently. Return ONLY the extracted text in its original language (e.g. if Arabic, return Arabic). No markdown formatting blocks."
-        }
+        { inlineData: { mimeType: mimeType, data: base64Data } },
+        { text: "Perform high-accuracy OCR on this image. Extract all readable text. Maintain logical order. Return ONLY extracted text without any conversational preamble or markdown." }
       ]
     };
   } else {
-    // Text input
+    const truncatedInput = input.length > MAX_TEXT_INPUT_CHARS 
+      ? input.slice(0, MAX_TEXT_INPUT_CHARS) + "\n[...Text truncated due to size limits...]"
+      : input;
+
     contents = {
       parts: [{
-        text: `Clean and normalize the following text. Remove excessive whitespace, fix broken lines (if any). Return the clean text in its original language (do not translate). \n\nTEXT:\n${input}`
+        text: `Clean, normalize, and fix any encoding errors in the following text. Preserve the original language and structure. Remove excessive whitespace.\n\nTEXT:\n${truncatedInput}`
       }]
     };
   }
 
-  const response = await ai.models.generateContent({
-    model,
-    contents,
-  });
-
+  const response = await ai.models.generateContent({ model, contents });
   return response.text || "";
 };
 
-// 2. CHUNK: Logic is usually deterministic code, but we can ask Gemini to do semantic chunking if we wanted. 
-// For this app, we will use a deterministic helper, but here is a Gemini helper for enrichment.
-
 // 3. ENRICH: Add context to a chunk
 export const enrichChunk = async (chunkText: string, fullDocSummary: string): Promise<{ context: string, keywords: string[], sentiment: string, entities: { people: string[], organizations: string[], locations: string[] } }> => {
-  const model = 'gemini-3-pro-preview'; // Pro for reasoning and context
+  const ai = getAI();
+  const model = 'gemini-3-flash-preview'; 
 
   const response = await ai.models.generateContent({
     model,
     contents: `
-      You are a contextual enrichment engine. 
+      You are a contextual enrichment engine for RAG pipelines.
+      DOCUMENT CONTEXT: ${fullDocSummary}
+      CURRENT SEGMENT: "${chunkText}"
       
-      DOCUMENT SUMMARY: ${fullDocSummary}
+      Analyze this segment. Provide:
+      1. A one-sentence 'context' explaining how this fits into the overall document.
+      2. Key 'keywords' (max 5).
+      3. Overall 'sentiment'.
+      4. Extracted 'entities' (people, organizations, locations).
       
-      CURRENT CHUNK: "${chunkText}"
-      
-      Analyze the specific chunk in relation to the document summary.
-      1. Detect the language of the chunk.
-      2. Provide a brief 1-sentence "context" explaining what this chunk is about (IN THE SAME LANGUAGE as the chunk).
-      3. Extract up to 3 key keywords (IN THE SAME LANGUAGE as the chunk).
-      4. Determine the sentiment (Return exactly one of: Neutral, Positive, Negative, Informational).
-      5. Extract named entities (People, Organizations, Locations) mentioned in the text (IN THE SAME LANGUAGE as the chunk).
+      Return ONLY valid JSON.
     `,
     config: {
       responseMimeType: "application/json",
@@ -85,18 +75,18 @@ export const enrichChunk = async (chunkText: string, fullDocSummary: string): Pr
             required: ["people", "organizations", "locations"]
           }
         },
-        required: ["context", "keywords", "sentiment", "entities"]
+        required: ["context", "keywords", "sentiment", "entities"],
+        propertyOrdering: ["context", "keywords", "sentiment", "entities"]
       }
     }
   });
 
-  const jsonStr = response.text || "{}";
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(response.text || "{}");
   } catch (e) {
     console.error("Failed to parse JSON enrichment", e);
     return { 
-      context: "Analysis failed", 
+      context: "Enrichment failed", 
       keywords: [], 
       sentiment: "Neutral",
       entities: { people: [], organizations: [], locations: [] }
@@ -105,42 +95,41 @@ export const enrichChunk = async (chunkText: string, fullDocSummary: string): Pr
 };
 
 // 4. SUMMARIZE CHUNK: Generate a specific summary for a single chunk
-export const generateChunkSummary = async (chunkText: string): Promise<string> => {
-  const model = 'gemini-3-flash-preview'; // Flash is sufficient for simple summarization
+export const generateChunkSummary = async (chunkText: string, style: 'bullet' | 'executive' | 'technical' = 'bullet'): Promise<string> => {
+  const ai = getAI();
+  const model = 'gemini-3-flash-preview';
   
+  const styleInstructions = {
+    bullet: "a single concise bullet point highlighting the main takeaway",
+    executive: "a professional, high-level summary paragraph (max 2 sentences)",
+    technical: "a data-driven TL;DR focusing on specific facts, figures, and names"
+  };
+
   const response = await ai.models.generateContent({
     model,
-    contents: `Summarize the following text segment concisely in one or two bullet points. Write the summary in the SAME language as the text (e.g. if Arabic, write in Arabic):\n\n"${chunkText}"`
+    contents: `Summarize this text segment in the style of ${styleInstructions[style]}:\n\n"${chunkText}"`
   });
-
-  return response.text || "Could not generate summary.";
+  return response.text || "Summary failed.";
 };
 
 // 5. KNOWLEDGE GRAPH: Generate graph from chunks
 export const generateKnowledgeGraph = async (chunks: Chunk[]): Promise<KnowledgeGraph> => {
+  const ai = getAI();
   const model = 'gemini-3-pro-preview';
   
-  // Combine extracted entities and text for context
-  const contextData = chunks.map(c => `
-    Text: "${c.originalText.slice(0, 200)}..."
-    Entities Found: ${JSON.stringify(c.entities)}
+  const sampleSize = 30;
+  const contextData = chunks.slice(0, sampleSize).map(c => `
+    Segment: "${c.originalText.slice(0, 150)}..."
+    Entities: ${JSON.stringify(c.entities || {})}
   `).join('\n---\n');
 
   const response = await ai.models.generateContent({
     model,
-    contents: `
-      You are a Knowledge Graph generator.
-      Analyze the provided text chunks and their extracted entities.
-      
-      Task:
-      1. Identify unique entities (nodes) representing People, Organizations, Locations, or Concepts. Merge duplicates.
-      2. Identify relationships (edges) between these entities based on the text.
-      
-      IMPORTANT: The 'label' for nodes and the 'relation' description for edges MUST be in the SAME language as the input text (e.g. Arabic if input is Arabic).
-      
-      INPUT DATA:
-      ${contextData}
-    `,
+    contents: `Identify unique entities and the relationships between them based on these document segments. 
+    
+    CRITICAL INSTRUCTION: All node 'labels' and edge 'relations' MUST be in the same language as the source text segments. Do not translate them to English.
+    
+    Nodes should have a label and type. Edges should describe the relation. Return valid JSON.\n\nINPUT DATA:\n${contextData}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
@@ -151,9 +140,9 @@ export const generateKnowledgeGraph = async (chunks: Chunk[]): Promise<Knowledge
             items: {
               type: Type.OBJECT,
               properties: {
-                id: { type: Type.STRING, description: "Unique snake_case identifier" },
-                label: { type: Type.STRING, description: "Human readable name in original language" },
-                type: { type: Type.STRING, description: "Person, Organization, Location, etc." }
+                id: { type: Type.STRING },
+                label: { type: Type.STRING },
+                type: { type: Type.STRING }
               },
               required: ["id", "label", "type"]
             }
@@ -163,38 +152,35 @@ export const generateKnowledgeGraph = async (chunks: Chunk[]): Promise<Knowledge
             items: {
               type: Type.OBJECT,
               properties: {
-                source: { type: Type.STRING, description: "id of the source node" },
-                target: { type: Type.STRING, description: "id of the target node" },
-                relation: { type: Type.STRING, description: "verb or relationship description in original language" }
+                source: { type: Type.STRING },
+                target: { type: Type.STRING },
+                relation: { type: Type.STRING }
               },
               required: ["source", "target", "relation"]
             }
           }
         },
-        required: ["nodes", "edges"]
+        required: ["nodes", "edges"],
+        propertyOrdering: ["nodes", "edges"]
       }
     }
   });
 
-  const jsonStr = response.text || '{"nodes": [], "edges": []}';
   try {
-    return JSON.parse(jsonStr);
+    return JSON.parse(response.text || '{"nodes": [], "edges": []}');
   } catch (e) {
     console.error("Failed to parse KG", e);
     return { nodes: [], edges: [] };
   }
 };
 
-// Helper to generate a quick summary of the whole doc for context injection
 export const generateDocumentSummary = async (text: string): Promise<string> => {
+  const ai = getAI();
   const model = 'gemini-3-flash-preview';
-  // Truncate if too long for summary generation to save tokens/time
-  const truncated = text.slice(0, 10000); 
-  
+  const truncated = text.slice(0, 20000); 
   const response = await ai.models.generateContent({
     model,
-    contents: `Summarize the following document in 2 sentences to provide high-level context. Write the summary in the SAME language as the document:\n\n${truncated}`
+    contents: `Provide a high-level two-sentence summary of this document to serve as context for segment-level analysis:\n\n${truncated}`
   });
-  
-  return response.text || "No context available.";
+  return response.text || "No summary available.";
 }
